@@ -15,7 +15,7 @@ export default function AIStatus() {
       className={`provider-pill ${data?.configured ? "ready" : ""}`}
       title={
         data?.configured
-          ? "Gemini 2.5 Flash key configured. Review every AI suggestion before using it."
+          ? `Gemini key configured · ${[data.model, ...(data.fallbacks || [])].join(" → ")}. Review every AI suggestion before using it.`
           : "No AI key configured. Demo tools still work."
       }
     >

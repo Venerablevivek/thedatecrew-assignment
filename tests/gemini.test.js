@@ -1,11 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { generateStructured, GEMINI_MODEL } from "../lib/gemini.js";
+import {
+  generateStructured,
+  GEMINI_MODEL,
+  MAX_MODEL_CALLS,
+  resetGeminiCooldowns,
+} from "../lib/gemini.js";
 import { analyzeFeedback } from "../lib/ai.js";
 import { feedbackSchema } from "../lib/validation.js";
 const schema = z.object({ message: z.string().min(1) });
 function withKey(t) {
+  resetGeminiCooldowns();
   const old = process.env.GEMINI_API_KEY;
   process.env.GEMINI_API_KEY = "test-key-not-real";
   t.after(() => {
@@ -38,15 +44,58 @@ test("Gemini uses requested model, server header, bounded thinking and JSON sche
   assert.equal(result.message, "Draft");
   assert.equal(GEMINI_MODEL, "gemini-2.5-flash");
 });
-test("quota errors are actionable and do not retry or leak upstream messages", async (t) => {
+const failure = (status, error = {}) => ({ ok: false, status, json: async () => ({ error }) });
+const modelOf = (url) => url.match(/models\/([^:]+):/)[1];
+test("falls back to the next model on quota and overload, then reports the answering model", async (t) => {
+  withKey(t);
+  const seen = [];
+  const meta = {};
+  const result = await generateStructured({ schema, meta }, async (url, options) => {
+    seen.push([modelOf(url), JSON.parse(options.body).generationConfig.thinkingConfig]);
+    if (seen.length === 1) return failure(429, { details: [{ retryDelay: "30s" }] });
+    if (seen.length === 2) return failure(503, { message: "high demand" });
+    return success({ message: "From fallback" });
+  });
+  assert.equal(result.message, "From fallback");
+  assert.deepEqual(
+    seen.map(([m]) => m),
+    ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.7-flash"],
+  );
+  // Only Gemini 2.5 receives thinkingBudget 0; newer models reject it.
+  assert.deepEqual(seen[0][1], { thinkingBudget: 0 });
+  assert.equal(seen[2][1], undefined);
+  assert.deepEqual(meta, { model: "gemini-3.7-flash", label: "Gemini 3.7 Flash", attempts: 3 });
+});
+test("quota errors cap calls per request and cooling-down models get no requests", async (t) => {
+  withKey(t);
+  let calls = 0;
+  const limited = async () => {
+    calls++;
+    return failure(429, { details: [{ retryDelay: "40s" }], message: "secret upstream text" });
+  };
+  await assert.rejects(
+    generateStructured({ schema }, limited),
+    (e) => e.code === "AI_QUOTA" && e.status === 429 && !e.message.includes("secret"),
+  );
+  assert.equal(calls, MAX_MODEL_CALLS);
+  await assert.rejects(generateStructured({ schema }, limited), (e) => e.code === "AI_QUOTA");
+  assert.equal(calls, 5, "only the two untried models were called");
+  // Every model is now cooling down: no request is made at all.
+  await assert.rejects(generateStructured({ schema }, limited), (e) => e.code === "AI_QUOTA");
+  assert.equal(calls, 5);
+});
+test("an invalid API key stops immediately instead of trying other models", async (t) => {
   withKey(t);
   let calls = 0;
   await assert.rejects(
     generateStructured({ schema }, async () => {
       calls++;
-      return { ok: false, status: 429 };
+      return failure(400, {
+        message: "API key not valid.",
+        details: [{ reason: "API_KEY_INVALID" }],
+      });
     }),
-    (e) => e.code === "AI_QUOTA" && e.status === 429,
+    (e) => e.code === "AI_CONFIGURATION",
   );
   assert.equal(calls, 1);
 });
@@ -69,6 +118,7 @@ test("truncated, blocked, malformed and schema-invalid responses are rejected", 
       generateStructured({ schema }, async () => ({ ok: true, json: async () => payload })),
       (e) => e.code === "AI_INVALID_OUTPUT",
     );
+  resetGeminiCooldowns();
 });
 test("transport failures return safe retry messaging", async (t) => {
   withKey(t);

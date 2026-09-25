@@ -98,11 +98,54 @@ test("Gemini answers receive bounded scoped facts and validated candidates", asy
     { mode: "matches", history: [], question: "Help" },
     async (payload) => {
       assert.equal(payload.input.client.id, "client");
-      assert.deepEqual(payload.input.allowedCandidateIds, ["good"]);
-      return guidedAnswer(ctx, "matches");
+      // The model only sees short aliases, never database IDs.
+      assert.deepEqual(
+        payload.input.allowedCandidates.map((c) => [c.id, c.name]),
+        [["C1", "Good profile"]],
+      );
+      assert.ok(payload.input.evidence.every((e) => /^E\d+$/.test(e.id)));
+      const profileAlias = payload.input.allowedCandidates[0].evidenceId;
+      assert.ok(profileAlias);
+      return {
+        title: "A focused shortlist",
+        points: [{ text: "One profile fits.", evidenceIds: ["E1", profileAlias] }],
+        candidateIds: ["C1"],
+        nextStep: "QUEUE",
+        followUp: "Anything to check first?",
+      };
     },
   );
   assert.equal(result.source, "GEMINI");
+  // Aliases are mapped back to real records before the answer is returned.
+  assert.deepEqual(
+    result.evidence.map((e) => e.id),
+    ["scope", "profile:good"],
+  );
+  assert.equal(result.candidates[0].id, "good");
+});
+test("the model schema rejects garbled or invented record IDs", async (t) => {
+  const old = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = "test";
+  t.after(() => {
+    if (old === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = old;
+  });
+  const ctx = buildAssistantContext(client, profiles);
+  await answerAssistant(ctx, { mode: "brief", history: [], question: "Brief" }, async (p) => {
+    const answer = (ids, candidates = []) => ({
+      title: "t",
+      points: [{ text: "x", evidenceIds: ids }],
+      candidateIds: candidates,
+      nextStep: "CLIENT",
+      followUp: "",
+    });
+    assert.equal(p.schema.safeParse(answer(["E1"])).success, true);
+    // A real ID or a spliced one (the failure seen in production) is no longer accepted.
+    assert.equal(p.schema.safeParse(answer(["preference:hard"])).success, false);
+    assert.equal(p.schema.safeParse(answer(["feedback:cmuh7s9ld001p6frzczk7o6zn"])).success, false);
+    assert.equal(p.schema.safeParse(answer(["E1"], ["good"])).success, false);
+    return answer(["E1"]);
+  });
 });
 test("assistant input limits oversized questions and forged role history", () => {
   assert.equal(

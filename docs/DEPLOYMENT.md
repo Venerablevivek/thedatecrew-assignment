@@ -74,7 +74,9 @@ References: [Vercel Postgres integrations](https://vercel.com/docs/postgres), [P
 
 ## Enable and verify live AI
 
-Use deployment access protection for a private assessment demo before adding `GEMINI_API_KEY`; there is no app authentication or durable public rate limiter in this MVP. Set `DEMO_ANALYZER=false` and the fixed `gemini-2.5-flash` model. Redeploy. Analyze the example and verify the response says **Gemini 2.5 Flash draft**, not **Demo rules**. Save only after reviewing the extracted evidence.
+Use deployment access protection for a private assessment demo before adding `GEMINI_API_KEY`; there is no app authentication or durable public rate limiter in this MVP. Set `DEMO_ANALYZER=false`. Redeploy. Analyze the example and verify the response names a Gemini model (for example **Gemini 2.5 Flash draft**), not **Demo rules**.
+
+Model fallback: requests try `gemini-2.5-flash`, then `gemini-3.5-flash`, `gemini-3.7-flash`, `gemini-3.5-flash-lite` and `gemini-2.5-flash-lite` (each has its own free-tier quota). At most 3 models are called per request; a model that returns 429/503 is skipped until its cooldown ends, so repeated clicks do not keep hitting a locked quota. Set `GEMINI_MODELS` (comma-separated) in Vercel to change the order. Vercel logs show one `[gemini]` line per attempt with the model and outcome only. Save only after reviewing the extracted evidence.
 
 Gemini outages leave manual categorization available. Avoid claiming live AI was tested until an actual request succeeds with your configured account.
 
