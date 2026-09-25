@@ -1,0 +1,207 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PreferenceType {
+  HARD
+  SOFT
+}
+
+enum RecommendationStatus {
+  SUGGESTED
+  SHORTLISTED
+  SHARED
+  ACCEPTED
+  REJECTED
+  CONTACT_SHARED
+  CONVERSATION_STARTED
+  MEETING_FIXED
+  MEETING_COMPLETED
+}
+
+enum SignalType {
+  REPEATED_REJECTION
+  REPEATED_ACCEPTANCE
+  PREFERENCE_CONTRADICTION
+}
+
+enum SignalStatus {
+  PENDING_REVIEW
+  CONFIRMED
+  DISMISSED
+}
+
+model Matchmaker {
+  id              String           @id @default(cuid())
+  name            String
+  email           String?          @unique
+  clients         Client[]
+  recommendations Recommendation[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model Client {
+  id              String             @id @default(cuid())
+  name            String
+  age             Int?
+  city            String?
+  occupation      String?
+  facts           Json?
+  matchmakerId    String
+  matchmaker      Matchmaker         @relation(fields: [matchmakerId], references: [id])
+
+  preferences     ClientPreference[]
+  recommendations Recommendation[]
+  feedback        Feedback[]
+  signals         PreferenceSignal[]
+
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([matchmakerId])
+}
+
+model ClientPreference {
+  id          String         @id @default(cuid())
+  clientId    String
+  client      Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  key         String
+  value       Json
+  type        PreferenceType
+  weight      Float          @default(1)
+  source      String         @default("STATED")
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([clientId])
+  @@index([key])
+}
+
+model CandidateProfile {
+  id              String           @id @default(cuid())
+  name            String
+  age             Int
+  city            String
+  occupation      String?
+  smoking         String?
+  children        String?
+  relationshipIntent String?
+
+  attributes      Json
+  partnerRequirements Json?
+  valuesSummary   String?
+  lifestyleSummary String?
+  active          Boolean          @default(true)
+  lastConfirmedAt DateTime?
+
+  recommendations Recommendation[]
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([active])
+  @@index([city])
+}
+
+model Recommendation {
+  id              String               @id @default(cuid())
+  clientId        String
+  profileId       String
+  matchmakerId    String
+
+  client          Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  profile         CandidateProfile     @relation(fields: [profileId], references: [id])
+  matchmaker      Matchmaker           @relation(fields: [matchmakerId], references: [id])
+
+  status          RecommendationStatus @default(SUGGESTED)
+
+  score           Float?
+  scoreBreakdown  Json?
+  matchedReasons  Json?
+  warnings        Json?
+  eligibility     Json?
+
+  feedback        Feedback?
+  meeting         Meeting?
+
+  preferenceSnapshot Json?
+  contactSharedAt DateTime?
+  conversationAt DateTime?
+  meetingFixedAt DateTime?
+  sharedAt        DateTime?
+  acceptedAt      DateTime?
+  completedAt     DateTime?
+
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@unique([clientId, profileId])
+  @@index([clientId, status])
+  @@index([matchmakerId])
+}
+
+model Feedback {
+  id               String         @id @default(cuid())
+  clientId         String
+  recommendationId String         @unique
+
+  client           Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  recommendation   Recommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+
+  rawText          String
+  structured       Json
+  aiSummary        String?
+  source           String         @default("MANUAL")
+  wasEdited        Boolean        @default(false)
+
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([clientId])
+}
+
+model PreferenceSignal {
+  id            String       @id @default(cuid())
+  clientId      String
+  client        Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  type          SignalType
+  attributeKey  String
+  title         String
+  description   String
+  evidence      Json
+  confidence    Float
+  status        SignalStatus @default(PENDING_REVIEW)
+  appliedAt     DateTime?
+  signature     String       @unique
+
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([clientId, status])
+}
+
+model Meeting {
+  id String @id @default(cuid())
+  recommendationId String @unique
+  recommendation Recommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  clientAvailability String @default("")
+  candidateAvailability String @default("")
+  scheduledAt DateTime?
+  durationMinutes Int @default(60)
+  location String @default("")
+  status String @default("PLANNING")
+  followUpAt DateTime?
+  followUpDone Boolean @default(false)
+  notes String @default("")
+  version Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
