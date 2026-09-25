@@ -5,8 +5,11 @@ import { assistantInput, buildAssistantContext, answerAssistant } from "@/lib/as
 import { GeminiError, geminiConfigured } from "@/lib/gemini";
 async function context(id, question = "") {
   if (!id) throw new ApiError("Choose a client");
-  const client = await getClient(id);
-  const profiles = await prisma.candidateProfile.findMany({ where: { active: true } });
+  // Independent queries: run them in parallel rather than one after the other.
+  const [client, profiles] = await Promise.all([
+    getClient(id),
+    prisma.candidateProfile.findMany({ where: { active: true } }),
+  ]);
   return buildAssistantContext(client, profiles, question);
 }
 export const GET = route(async (req) => {

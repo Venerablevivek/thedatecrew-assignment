@@ -4,7 +4,12 @@ import { meetingSchema } from "@/lib/tools-validation";
 export const GET = route(async () => ({
   recommendations: await prisma.recommendation.findMany({
     where: { acceptedAt: { not: null }, status: { not: "REJECTED" } },
-    include: { client: true, profile: true, meeting: true },
+    select: {
+      id: true,
+      client: { select: { name: true } },
+      profile: { select: { name: true } },
+      meeting: true,
+    },
     orderBy: { acceptedAt: "desc" },
   }),
 }));

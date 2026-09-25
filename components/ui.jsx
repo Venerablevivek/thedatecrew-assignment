@@ -17,8 +17,30 @@ export async function request(url, method = "GET", payload) {
   if (!result.ok) throw new Error(result.error?.message || "Request failed");
   return result.data;
 }
+// Client-side cache shared by every page (stale-while-revalidate): revisiting a page renders
+// its last data immediately while a fresh copy loads in the background. Identical requests
+// already in flight are shared instead of duplicated.
+const cache = new Map(),
+  inflight = new Map();
+function fetchFresh(url) {
+  const promise = request(url)
+    .then((data) => {
+      cache.set(url, data);
+      return data;
+    })
+    .finally(() => {
+      if (inflight.get(url) === promise) inflight.delete(url);
+    });
+  inflight.set(url, promise);
+  return promise;
+}
+const load = (url) => inflight.get(url) || fetchFresh(url);
+// Warm the cache before navigation (e.g. on link hover). Errors surface when the page loads.
+export function preload(url) {
+  if (!cache.has(url) && !inflight.has(url)) fetchFresh(url).catch(() => {});
+}
 export function useResource(url) {
-  const [data, setData] = useState(null),
+  const [data, setData] = useState(() => (url && cache.get(url)) || null),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true),
     [version, setVersion] = useState(0);
@@ -26,9 +48,12 @@ export function useResource(url) {
   useEffect(() => {
     if (!url) return;
     let alive = true;
+    const cached = cache.get(url);
+    if (cached) setData(cached);
     setLoading(true);
     setError("");
-    request(url)
+    // After a mutation (refresh), always fetch fresh rather than reuse an older request.
+    (version ? fetchFresh(url) : load(url))
       .then((d) => {
         if (alive) setData(d);
       })

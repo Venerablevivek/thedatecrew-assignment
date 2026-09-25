@@ -46,15 +46,11 @@ export default function Clients() {
   const all = (data?.clients || []).map((c) => ({
     ...c,
     owner: c.matchmaker.name.split(" · ")[0],
-    lastActivity: c.recommendations.reduce(
-      (latest, r) => (!latest || new Date(r.updatedAt) > new Date(latest) ? r.updatedAt : latest),
-      null,
-    ),
   }));
   const owners = [...new Set(all.map((c) => c.owner))];
   const toReview = all.filter((c) => c.pendingSignals > 0).length;
   const totalSignals = all.reduce((n, c) => n + c.pendingSignals, 0);
-  const totalRecs = all.reduce((n, c) => n + c.recommendations.length, 0);
+  const totalRecs = all.reduce((n, c) => n + c.recommendationCount, 0);
   const avgAcceptance = all.length
     ? Math.round((all.reduce((n, c) => n + c.acceptanceRate, 0) / all.length) * 10) / 10
     : 0;
@@ -131,7 +127,6 @@ export default function Clients() {
       </div>
       <div className="client-grid">
         {clients.map((c, i) => {
-          const hard = c.preferences.filter((p) => p.type === "HARD").length;
           return (
             <article className="card client-card glass" style={shade(i)} key={c.id}>
               <div className="client-card-head">
@@ -167,11 +162,11 @@ export default function Clients() {
               </div>
               <div className="client-facts">
                 <span>
-                  <strong>{c.recommendations.length}</strong> recommendations
+                  <strong>{c.recommendationCount}</strong> recommendations
                 </span>
                 <span>
-                  <strong>{hard}</strong> must-haves ·{" "}
-                  <strong>{c.preferences.length - hard}</strong> nice-to-haves
+                  <strong>{c.hardPreferences}</strong> must-haves ·{" "}
+                  <strong>{c.softPreferences}</strong> nice-to-haves
                 </span>
               </div>
               <div className="client-card-foot">

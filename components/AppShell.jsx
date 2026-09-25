@@ -14,6 +14,16 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import AIStatus from "./AIStatus";
+import { preload } from "./ui";
+// The main data request behind each page, fetched on hover so the page opens with data ready.
+const pageData = {
+  "/dashboard": "/api/dashboard",
+  "/clients": "/api/clients",
+  "/match-queue": "/api/match-queue?clientId=ananya",
+  "/meetings": "/api/meetings",
+  "/feedback": "/api/dashboard",
+  "/assistant": "/api/assistant?clientId=ananya",
+};
 const items = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/clients", label: "Clients", icon: UsersRound },
@@ -43,6 +53,8 @@ export default function AppShell({ children }) {
               href={href}
               onClick={() => setMobile(false)}
               aria-current={pathname.startsWith(href) ? "page" : undefined}
+              onMouseEnter={() => preload(pageData[href])}
+              onFocus={() => preload(pageData[href])}
               className={`nav-item ${pathname.startsWith(href) ? "active" : ""}`}
             >
               <Icon size={18} />

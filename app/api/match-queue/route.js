@@ -5,8 +5,11 @@ import { rankCandidates } from "@/lib/matching";
 export const GET = route(async (req) => {
   const id = new URL(req.url).searchParams.get("clientId");
   if (!id) throw new ApiError("Choose a client");
-  const client = await getClient(id);
-  const candidates = await prisma.candidateProfile.findMany({ where: { active: true } });
+  // Independent queries: run them in parallel rather than one after the other.
+  const [client, candidates] = await Promise.all([
+    getClient(id),
+    prisma.candidateProfile.findMany({ where: { active: true } }),
+  ]);
   return {
     client,
     matches: rankCandidates(client, candidates, client.recommendations).map((m) => ({
